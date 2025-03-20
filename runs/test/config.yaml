@@ -1,0 +1,30 @@
+survey_kws:
+  name: NGC3109_COADD
+
+gal_kws:
+  type: exp
+  gal_mag: 19
+  
+  BlankImage: False
+  TestInjection: True
+
+  size_min: 0.01
+  size_max: 50.0
+  q_min: 0.1
+  q_max: 1.0
+  mag_min: -1000
+  mag_max: 1000
+
+  circular: False
+
+  extinction: False
+
+files:
+  save_meds: False
+  clean_tmpdir: False
+     
+psf_kws:
+  type: psfex_deconvolved
+
+true_detection:
+  box_size: 32
