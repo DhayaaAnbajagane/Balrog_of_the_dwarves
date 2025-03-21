@@ -335,7 +335,8 @@ class End2EndSimulation(object):
                 x    += list(x_star_final)
                 y    += list(y_star_final)
             
-        
+                print(d_i, len(inds_stars))
+                 
         inds = np.array(inds)
         ra   = np.array(ra)
         dec  = np.array(dec)
@@ -406,6 +407,7 @@ class End2EndSimulation(object):
         
         truth_cat_path = get_truth_catalog_path(meds_dir=self.output_meds_dir, medsconf=MEDSCONF, tilename=self.tilename)
         sim_cat_path   = truth_cat_path.replace('_truthcat.fits', '_spliced_simcat.fits') 
+        make_dirs_for_file(sim_cat_path)
         fitsio.write(sim_cat_path, self.simulated_catalog.cat, clobber=True)
                     
         return self.simulated_catalog
