@@ -88,7 +88,14 @@ def move_Truth_cat(tile, output_desdata):
 
     print(cat_path, new_path)
     shutil.move(cat_path, new_path)
+    
+    cat_path = get_truth_catalog_path(meds_dir = output_desdata, medsconf = MEDSCONF, tilename = tile)
+    cat_path = cat_path.replace('_truthcat.fits', '_spliced_simcat.fits')
+    new_path = os.environ['BALROG_DIR'] + "/%(name)s/SplicedSim_Input_%(tile)s-cat.fits" % args
         
+    print(cat_path, new_path)
+    shutil.move(cat_path, new_path)
+                        
     return True
 
 

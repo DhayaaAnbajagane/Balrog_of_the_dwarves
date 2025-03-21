@@ -394,7 +394,20 @@ class End2EndSimulation(object):
         """Makes sim catalog"""
         
         self.simulated_catalog = init_dwarf_catalog(rng = self.dwarfsource_rng)
-            
+        
+        mag_i = 30 - 2.5 * np.log10(self.simulated_catalog.cat['FLUX_I'])
+        hlr   = self.simulated_catalog.cat['hlr']
+        Mask  = ((mag_i > self.gal_kws['mag_min']) &  (mag_i < self.gal_kws['mag_max']) &
+                 (hlr > self.gal_kws['size_min'])  &  (hlr < self.gal_kws['size_max'])
+                 )
+
+        print(f"REMOVING {np.sum(np.invert(Mask))} objects (f = {np.average(np.invert(Mask))}). Keeping {np.sum(Mask)} objects.")
+        self.simulated_catalog._replace(cat = self.simulated_catalog.cat[Mask])
+        
+        truth_cat_path = get_truth_catalog_path(meds_dir=self.output_meds_dir, medsconf=MEDSCONF, tilename=self.tilename)
+        sim_cat_path   = truth_cat_path.replace('_truthcat.fits', '_spliced_simcat.fits') 
+        fitsio.write(sim_cat_path, self.simulated_catalog.cat, clobber=True)
+                    
         return self.simulated_catalog
 
 
