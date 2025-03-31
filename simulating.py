@@ -32,6 +32,10 @@ TMP_DIR = os.environ['TMPDIR']
 
 from functools import wraps
 import time
+
+import faulthandler
+faulthandler.enable()
+
 def retry_on_exception(max_attempts=20, sleep_time=10):
     def decorator(func):
         @wraps(func)
@@ -42,6 +46,7 @@ def retry_on_exception(max_attempts=20, sleep_time=10):
                     return func(*args, **kwargs)  # Attempt to execute the function
                 except Exception as e:
                     print(f"BROKE DURING OPERATION. RETRYING AGAIN... ({counter + 1} TRIES SO FAR)")
+                    print(f"BREAKING WAS DUE TO EXCEPTION {e}")
                     time.sleep(sleep_time + 3 * np.random.rand())
                     counter += 1
             # If we reach here, all attempts have failed
@@ -139,6 +144,7 @@ class End2EndSimulation(object):
         # step 2 - make the truth catalog
         self.truth_catalog = self._make_truth_catalog()
         
+        print("SIZE IS", len(self.truth_catalog)) 
         # step 3 - per band, write the images to a tile
         for band in self.bands:
             self._run_band(band=band)
@@ -226,7 +232,7 @@ class End2EndSimulation(object):
             image_path=self.info[band]['image_path'],
             image_ext=self.info[band]['image_ext'])
 
-        radius = self.gal_kws['size_max']/0.263 #Radius of largest galaxy in pixel units.
+        radius = 1.5 * self.gal_kws['spacing']/0.263 #Radius of largest galaxy in pixel units.
         
         #These are the positions of the GALAXIES. We'll do the stars ourselves.
         ra_dwarf, dec_dwarf, x_dwarf, y_dwarf = make_coadd_hexgrid_radec(radius = radius,
@@ -270,10 +276,11 @@ class End2EndSimulation(object):
         
         #Positions and inds. The ind column also doubles as "DWARF or STAR" column since we can use it
         #to index into the simulated_catalog, which has this info.
-        ra, dec, x, y, inds = [], [], [], [], []
+        ra_all, dec_all, x_all, y_all, inds_all = [], [], [], [], []
         
-        #Loop over each dwarf and build its ra and dec
-        for d_i in tqdm(range(len(ra_dwarf)), desc = 'Building Truth catalog'):
+        def get_pos(d_i):
+            
+            ra, dec, x, y, inds = [], [], [], [], []
             
             ind = inds_dwarf[d_i] #Find dwarf ind
             
@@ -293,7 +300,6 @@ class End2EndSimulation(object):
             hlr    = self.simulated_catalog.cat['hlr'][ind]
             r0     = hlr / 1.6783469900166605/0.263 #Convert from hlr to scale radius of exponential, and in pixel units
             ang    = self.simulated_catalog.rand_rot[ind] * np.pi/180 #put it in radians. Minus sign is convention
-            
             
             if True:
                 #Find star position using analytical inversion. We sample uniform dist. and convert to exponential dist.
@@ -334,14 +340,25 @@ class End2EndSimulation(object):
                 dec  += list(dec_star_final)
                 x    += list(x_star_final)
                 y    += list(y_star_final)
+                
+            return inds, ra, dec, x, y
             
-                print(d_i, len(inds_stars))
-                 
-        inds = np.array(inds)
-        ra   = np.array(ra)
-        dec  = np.array(dec)
-        x    = np.array(x)
-        y    = np.array(y)
+            
+        res = joblib.Parallel(n_jobs = os.cpu_count(), verbose = 10)(joblib.delayed(get_pos)(i) for i in range(len(ra_dwarf)))
+        for r in res:
+            inds_all += r[0]
+            ra_all   += r[1]
+            dec_all  += r[2]
+            x_all    += r[3]
+            y_all    += r[4]
+            
+        inds = np.array(inds_all)
+        ra   = np.array(ra_all)
+        dec  = np.array(dec_all)
+        x    = np.array(x_all)
+        y    = np.array(y_all)
+        
+        del inds_all, ra_all, dec_all, x_all, y_all
         
         dtype = [('number', 'i8'), ('ID', 'i8'), ('ind', 'i8'), 
                  ('ra',  'f8'), ('dec', 'f8'), ('x', 'f8'), ('y', 'f8'),
@@ -403,8 +420,8 @@ class End2EndSimulation(object):
                  )
 
         print(f"REMOVING {np.sum(np.invert(Mask))} objects (f = {np.average(np.invert(Mask))}). Keeping {np.sum(Mask)} objects.")
-        self.simulated_catalog._replace(cat = self.simulated_catalog.cat[Mask])
-        
+        self.simulated_catalog = self.simulated_catalog._replace(cat = self.simulated_catalog.cat[Mask])
+
         truth_cat_path = get_truth_catalog_path(meds_dir=self.output_meds_dir, medsconf=MEDSCONF, tilename=self.tilename)
         sim_cat_path   = truth_cat_path.replace('_truthcat.fits', '_spliced_simcat.fits') 
         make_dirs_for_file(sim_cat_path)

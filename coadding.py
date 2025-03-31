@@ -39,7 +39,7 @@ class MakeSwarpCoadds(object):
     
     def run(self):
         
-        self._make_nwgint_files() #We don't need to do this since it happens at start of pipeline
+        #self._make_nwgint_files() #We don't need to do this since it happens at start of pipeline
         self._make_filelists()
         self._make_coadds()
         self._make_detection_coadd()
@@ -111,7 +111,7 @@ class MakeSwarpCoadds(object):
 #                                     --hdupcfg $DESDM_CONFIG/Y6A1_v1_coadd_nwgint.config  \
 #                                     --streak_file $DESDM_CONFIG/Y3A2_v5_streaks_update-Y1234_FINALCUT_v1.fits" % args
                 
-                #os.system(pix_command)
+                os.system(pix_command)
 
                 print("FINISHED nwgint image for path %s" % src['image_path'], flush = True)
                
