@@ -21,11 +21,12 @@ def finalize_files(tilename, bands, output_desdata, config):
         
         #move_balrog_cat(tilename, output_desdata)
         move_Truth_cat(tilename, output_desdata)
-        move_fitvd(tilename, output_desdata)
+        move_fitvd_cat(tilename, output_desdata)
     
-    except:
+    except Exception as e:
         
         print("SOMETHING CRASHED. SIGH")
+        print("DUE TO EXCEPTION", e)
 
     if config['files']['clean_tmpdir'] == True:
         cleanup_tmpdir_files(tilename, output_desdata)
@@ -139,6 +140,7 @@ def move_fitvd_cat(tile, output_desdata):
     
     cat_path = get_fitvd_file_path(meds_dir=output_desdata, medsconf = MEDSCONF) + '/fitvd.fits'
     new_path = os.environ['BALROG_DIR'] + "/%(name)s/fitvd_%(tile)s.fits" % args
+    print(cat_path, new_path)
     shutil.move(cat_path, new_path)
          
     return True
