@@ -6,7 +6,7 @@ and saving relevant quantities.
 import shutil
 import yaml
 import os
-from files import get_truth_catalog_path, get_balrog_file_path, get_band_info_file, get_mcal_file_path
+from files import get_truth_catalog_path, get_balrog_file_path, get_band_info_file, get_mcal_file_path, get_fitvd_path
 from constants import MEDSCONF
 
 
@@ -138,7 +138,7 @@ def move_fitvd_cat(tile, output_desdata):
     #shutil.move(cat_path, new_path)
     
     
-    cat_path = get_fitvd_file_path(meds_dir=output_desdata, medsconf = MEDSCONF) + '/fitvd.fits'
+    cat_path = get_fitvd_path(meds_dir=output_desdata, medsconf = MEDSCONF) + '/fitvd.fits'
     new_path = os.environ['BALROG_DIR'] + "/%(name)s/fitvd_%(tile)s.fits" % args
     print(cat_path, new_path)
     shutil.move(cat_path, new_path)
