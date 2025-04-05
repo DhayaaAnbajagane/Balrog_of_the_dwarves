@@ -24,13 +24,13 @@ class SuppressPrint:
 
 def match_catalogs(path, tilename, bands, config):
 
-    with SuppressPrint(): #To remove some annoying log10() and divide invalid errors
-        SIM = End2EndSimulation.__new__(End2EndSimulation)
-    SIM.gal_kws  = config['gal_kws']
-    SIM.star_kws = config['star_kws']
-    SIM.source_rng = np.random.default_rng(seed = 42)
+    #with SuppressPrint(): #To remove some annoying log10() and divide invalid errors
+    #    SIM = End2EndSimulation.__new__(End2EndSimulation)
+    #SIM.gal_kws  = config['gal_kws']
+    #SIM.star_kws = config['star_kws']
+    #SIM.source_rng = np.random.default_rng(seed = 42)
     
-    Input_catalog  = SIM._make_sim_catalog()
+    #Input_catalog  = SIM._make_sim_catalog()
 
     '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/Input_DES1210+0043-cat.fits',
     '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/SrcExtractor_DES1003-3206_i-cat.fits',
@@ -38,6 +38,11 @@ def match_catalogs(path, tilename, bands, config):
     '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/metacal_DES1451-0124.fits',
 
     
+    Input_catalog = fitsio.read(r'%s/SplicedSim_Input_%s-cat.fits' % (path, tilename), ext = 1)
+    
+    print(tilename, flush = True)
+    print(Input_catalog, flush = True)
+     
     #Get all paths
     sof_path   = r'%s/fitvd_%s.fits' % (path, tilename)
     Truth_path = r'%s/Input_%s-cat.fits' % (path, tilename)
@@ -49,7 +54,13 @@ def match_catalogs(path, tilename, bands, config):
     Truth = fitsio.read(Truth_path, ext = 1)
     Ocat  = [fitsio.read(i, ext = 1) for i in OCat_path]
     Bcat  = [fitsio.read(i, ext = 1) for i in BCat_path]
-        
+    
+    print(len(sof), [len(B) for B in Bcat], len(Truth), flush = True)
+    
+    if len(sof) != len(Bcat[0]):
+        print("SOF NOT SAME LENGTH AS BALROG SE CAT. SKIPPING TILE", tilename)
+        return None
+
     #STEP 1: match SrcExtractor objects with injected objects. Bcat[0] is r-band
     tree = BallTree(np.vstack([Bcat[0]['DELTAWIN_J2000'], Bcat[0]['ALPHAWIN_J2000']]).T * np.pi/180, leaf_size=40, metric="haversine")
     d, j = tree.query(np.vstack([Truth['dec'], Truth['ra']]).T * np.pi/180)
@@ -76,7 +87,7 @@ def match_catalogs(path, tilename, bands, config):
     dtype  = [('meas_detected', int), ('meas_d_contam_arcsec', float), ('truth_ra', float), ('truth_dec', float)]
     dtype += [(f'truth_{name}', dtype) for name, dtype in Input_catalog.dtype.descr]
     dtype += [(f'meas_{X[0]}', X[1]) if len(X) == 2 else (f'meas_{X[0]}', X[1], X[2]) for X in sof.dtype.descr]
-    
+     
     dtype  = np.dtype(dtype)
     output = np.zeros(Nobj, dtype = dtype)
     
@@ -117,26 +128,27 @@ if __name__ == "__main__":
     def my_func(i):
         f = files[i]
         tile = os.path.basename(f).split('_')[1].split('.')[0]
-        cat  = match_catalogs(os.path.dirname(f), tile, 'riz', config)
+        cat  = match_catalogs(os.path.dirname(f), tile, 'griz', config)
         
         return i, cat, [tile] * len(cat)
         
     jobs = [joblib.delayed(my_func)(i) for i in range(len(files))]
 
     with joblib.parallel_backend("loky"):
-        outputs = joblib.Parallel(n_jobs = 4, verbose=10)(jobs)
+        outputs = joblib.Parallel(n_jobs = 1, verbose=10)(jobs)
         
         for o in outputs:
+            if o is None: continue
             FINAL_CAT[o[0]] = o[1]
             tilenames[o[0]] = o[2]
                     
-    FINAL_CAT = np.concatenate(FINAL_CAT, axis = 0)
-    tilenames = np.concatenate(tilenames, axis = 0)
+    FINAL_CAT = np.concatenate([f for f in FINAL_CAT if f is not None], axis = 0)
+    tilenames = np.concatenate([t for t in tilenames if t is not None], axis = 0)
     
-    BITMASK = hp.read_map('/project/chihway/dhayaa/DECADE/Gold_Foreground_20230607.fits')
+    BITMASK = hp.read_map('/project/chihway/dhayaa/DECADE/Foreground_Masks/GOLD_Ext0.2_Star5_MCs2.fits')
     bmask   = BITMASK[hp.ang2pix(hp.npix2nside(BITMASK.size), FINAL_CAT['truth_ra'], FINAL_CAT['truth_dec'], lonlat = True)]
 
-    with h5py.File(PATH + '/BalrogOfTheStars_Catalog.hdf5', 'w') as f:
+    with h5py.File(PATH + '/BalrogOfTheDwarves_Catalog.hdf5', 'w') as f:
     
         for i in tqdm(FINAL_CAT.dtype.names, desc = 'Making HDF5'):
 
