@@ -276,7 +276,7 @@ class End2EndSimulation(object):
         
         #Positions and inds. The ind column also doubles as "DWARF or STAR" column since we can use it
         #to index into the simulated_catalog, which has this info.
-        ra_all, dec_all, x_all, y_all, inds_all = [], [], [], [], []
+        ra_all, dec_all, x_all, y_all, inds_all, uniq_all = [], [], [], [], [], []
         
         def get_pos(d_i):
             
@@ -341,7 +341,9 @@ class End2EndSimulation(object):
                 x    += list(x_star_final)
                 y    += list(y_star_final)
                 
-            return inds, ra, dec, x, y
+            uniq = list(np.ones(len(inds)) * self.dwarfsource_rng.integers(2**61))
+
+            return inds, ra, dec, x, y, uniq
             
             
         res = joblib.Parallel(n_jobs = os.cpu_count(), verbose = 10)(joblib.delayed(get_pos)(i) for i in range(len(ra_dwarf)))
@@ -351,18 +353,20 @@ class End2EndSimulation(object):
             dec_all  += r[2]
             x_all    += r[3]
             y_all    += r[4]
+            uniq_all += r[5]
             
         inds = np.array(inds_all)
         ra   = np.array(ra_all)
         dec  = np.array(dec_all)
         x    = np.array(x_all)
         y    = np.array(y_all)
+        uniq = np.array(uniq_all)
         
-        del inds_all, ra_all, dec_all, x_all, y_all
+        del inds_all, ra_all, dec_all, x_all, y_all, uniq_all
         
         dtype = [('number', 'i8'), ('ID', 'i8'), ('ind', 'i8'), 
                  ('ra',  'f8'), ('dec', 'f8'), ('x', 'f8'), ('y', 'f8'),
-                 ('a_world', 'f8'), ('b_world', 'f8'), ('size', 'f8')]
+                 ('a_world', 'f8'), ('b_world', 'f8'), ('size', 'f8'), ('uniq', 'i8')]
         for b in self.bands:
             dtype += [('A%s'%b, 'f8')]
             
@@ -371,6 +375,7 @@ class End2EndSimulation(object):
         
         #Now build truth catalog
         truth_cat['ind']    = inds
+        truth_cat['uniq']   = uniq
         truth_cat['number'] = np.arange(len(ra)).astype(np.int64) + 1 #This doesn't really matter
         truth_cat['ra']  = ra
         truth_cat['dec'] = dec
