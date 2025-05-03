@@ -254,6 +254,7 @@ class End2EndSimulation(object):
         
         print("TRUTH CATALOG HAS %d OBJECTS" % len(x_dwarf))
         
+        assert len(x_dwarf) > 0, "WE ARE NOT INJECTING ANY OBJECTS. EXITING....."
         
         #Find which dwarfs we will inject and subsample just the handful we need for this coadd
         mask_dwarf = self.simulated_catalog.cat['ISDIFFUSE'] == True
@@ -341,7 +342,7 @@ class End2EndSimulation(object):
                 x    += list(x_star_final)
                 y    += list(y_star_final)
                 
-            uniq = list(np.ones(len(inds)) * self.dwarfsource_rng.integers(2**61))
+            uniq = list(np.ones(len(inds)) * self.dwarfsource_rng.randint(2**30))
 
             return inds, ra, dec, x, y, uniq
             

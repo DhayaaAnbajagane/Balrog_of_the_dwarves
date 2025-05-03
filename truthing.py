@@ -102,12 +102,15 @@ def make_coadd_hexgrid_radec(*, radius, coadd_wcs, rng, return_xy=False):
 
     polygons = [list(zip(x, y)) for x in xs for y in ys] #MEGAN added list() 
     
-    s = np.shape(polygons)
-    L = s[0]*s[1]
-    pp = np.array(polygons).reshape(L,2)
-    c = np.vstack([tuple(row) for row in pp])
-    # Some of the redundant coordinates are offset by ~1e-10 pixels
-    hexgrid = np.unique(c.round(decimals=6), axis=0)
+    if len(polygons) > 0: 
+        s = np.shape(polygons)
+        L = s[0]*s[1]
+        pp = np.array(polygons).reshape(L,2)
+        c = np.vstack([tuple(row) for row in pp])
+        # Some of the redundant coordinates are offset by ~1e-10 pixels
+        hexgrid = np.unique(c.round(decimals=6), axis=0)
+    else:
+        hexgrid = np.array([[10_000/2, 10_000/2]])
 
     #Dithering because I do it for imsims when using fixed grid :P
     hexgrid[:, 0] += rng.uniform(low=-0.5, high=0.5, size = len(hexgrid))
@@ -116,6 +119,9 @@ def make_coadd_hexgrid_radec(*, radius, coadd_wcs, rng, return_xy=False):
     # Some hexagonal elements go beyond boundary; cut these out
     indx = np.where( (hexgrid[:,0]<=endx) & (hexgrid[:,1]<=endy) )
     x, y = hexgrid[indx].T
+    
+    if len(hexgrid) == 1: 
+        x, y = hexgrid.T
     
     ra, dec = coadd_wcs.image2sky(x, y)
 
