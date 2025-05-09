@@ -11,7 +11,10 @@ from constants import MEDSCONF
 
 
 def finalize_files(tilename, bands, output_desdata, config, seed):
-   
+    
+    new_path = os.environ['BALROG_DIR'] + '/' + os.path.basename(os.path.dirname(output_desdata))
+    os.makedirs(new_path, exist_ok=True)
+      
     try: 
         for b in bands:
             move_SrcExtractor_cat(tilename, b, output_desdata, seed)
