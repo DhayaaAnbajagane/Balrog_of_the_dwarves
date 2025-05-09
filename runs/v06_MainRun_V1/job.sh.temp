@@ -35,7 +35,6 @@ output="$PREP_DIR/{{ model_name }}_config{{ config_num }}/outputs_{{ tilename }}
 bands="griz"
 tilename="{{ tilename }}"
 
-
 echo "This task is running on node number: $SLURM_NODEID"
 echo "Nodes allocated to this job: $SLURM_JOB_NODELIST"
 echo "This task is running on the machine: $(hostname)"
