@@ -22,36 +22,23 @@ class SuppressPrint:
         sys.stdout.close()  # Close the null device
         sys.stdout = self._original_stdout  # Restore the original standard output
 
-def match_catalogs(path, tilename, bands, config):
+def match_catalogs(path, tilename, seed, bands, config):
 
-    #with SuppressPrint(): #To remove some annoying log10() and divide invalid errors
-    #    SIM = End2EndSimulation.__new__(End2EndSimulation)
-    #SIM.gal_kws  = config['gal_kws']
-    #SIM.star_kws = config['star_kws']
-    #SIM.source_rng = np.random.default_rng(seed = 42)
-    
-    #Input_catalog  = SIM._make_sim_catalog()
-
-    '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/Input_DES1210+0043-cat.fits',
-    '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/SrcExtractor_DES1003-3206_i-cat.fits',
-    '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/OldSrcExtractor_DES1301-3540_i-cat.fits',
-    '/project/chihway/dhayaa/DECADE/Balrog/v08_ProductionRun3/metacal_DES1451-0124.fits',
-
-    
-    Input_catalog = fitsio.read(r'%s/SplicedSim_Input_%s-cat.fits' % (path, tilename), ext = 1)
-    
+    Input_catalog = fitsio.read(r'%s/SplicedSim_Input_%s_seed%d-cat.fits' % (path, tilename, seed), ext = 1)
      
     #Get all paths
-    sof_path   = r'%s/fitvd_%s.fits' % (path, tilename)
-    Truth_path = r'%s/Input_%s-cat.fits' % (path, tilename)
+    sof_path   = r'%s/fitvd_%s_seed%d.fits' % (path, tilename, seed)
+    Truth_path = r'%s/Input_%s_seed%d-cat.fits' % (path, tilename, seed)
     OCat_path  = [r'%s/OldSrcExtractor_%s_%s-cat.fits' % (path, tilename, band) for band in bands] #Path to original SrcExtractor
-    BCat_path  = [r'%s/SrcExtractor_%s_%s-cat.fits' % (path, tilename, band) for band in bands] #Path to new SrcExtractor
+    BCat_path  = [r'%s/SrcExtractor_%s_seed%d_%s-cat.fits' % (path, tilename, seed, band) for band in bands] #Path to new SrcExtractor
     
+    print(path, tilename, seed)
     #Read mcal, truth, and srcext catalogs
     sof   = fitsio.read(sof_path,   ext = 1)
     Truth = fitsio.read(Truth_path, ext = 1)
     Ocat  = [fitsio.read(i, ext = 1) for i in OCat_path]
     Bcat  = [fitsio.read(i, ext = 1) for i in BCat_path]
+    cnum  = int(path[-1])
     
     if len(Truth) == 0:
         print("NO INJECTIONS IN TILE", tilename)
@@ -88,15 +75,17 @@ def match_catalogs(path, tilename, bands, config):
     #STEP 3: Construct the catalog
         
     #declare type of the output array
-    dtype  = [('meas_detected', int), ('meas_d_contam_arcsec', float), ('truth_ra', float), ('truth_dec', float)]
+    dtype  = [('meas_detected', int), ('meas_d_contam_arcsec', float), ('truth_ra', float), ('truth_dec', float), ('truth_uniq', int),
+              ('seed', '>i8'), ('cnum', '>i8')]
     dtype += [(f'truth_{name}', dtype) for name, dtype in Input_catalog.dtype.descr]
     dtype += [(f'meas_{X[0]}', X[1]) if len(X) == 2 else (f'meas_{X[0]}', X[1], X[2]) for X in sof.dtype.descr]
     
     for b in 'GRIZ':
         dtype += [(f'meas_{X[0]}_{b}', X[1]) if len(X) == 2 else (f'meas_{X[0]}_{b}', X[1], X[2]) for X in Bcat[0].dtype.descr]
-    
     dtype  = np.dtype(dtype)
     output = np.zeros(Nobj, dtype = dtype)
+    output['seed'] = seed
+    output['cnum'] = cnum
     
     assert np.all(Truth['ID'] == Input_catalog['ID'][Truth['ind']]), "Something went wrong in matching"
     
@@ -116,8 +105,25 @@ def match_catalogs(path, tilename, bands, config):
     output['meas_detected']        = Mask.astype(int)
     output['meas_d_contam_arcsec'] = d2
     
+    dtype = [('seed', '>i8'), ('cnum', '>i8')]
+    for b in 'GRIZ':
+        dtype += [(f'{X[0]}_{b}', X[1]) if len(X) == 2 else (f'meas_{X[0]}_{b}', X[1], X[2]) for X in Bcat[0].dtype.descr]
     
-    return output
+    Bout  = np.zeros(len(Bcat[0]), dtype = dtype)
+    Bout['seed'] = seed
+    Bout['cnum'] = cnum
+    for n in Bcat[0].dtype.names:
+        for b, B in zip('GRIZ', Bcat):
+            Bout[f'{n}_{b}'] = B[n]
+            
+    dtype = Truth.dtype.descr + Input_catalog.dtype.descr[1:] + [('seed', '>i8'), ('cnum', '>i8')]
+    Tout  = np.zeros(len(Truth), dtype = dtype)
+    Tout['seed'] = seed
+    Tout['cnum'] = cnum
+    for n in Truth.dtype.names:         Tout[n] = Truth[n]
+    for n in Input_catalog.dtype.names: Tout[n] = Input_catalog[n][Truth['ind']]
+            
+    return output, Tout, Bout
 
 
 if __name__ == "__main__":
@@ -126,43 +132,59 @@ if __name__ == "__main__":
     name     = os.path.basename(os.path.dirname(__file__))
     BROG_DIR = os.environ['BALROG_DIR']
     PATH     = BROG_DIR + '/' + name
-    config   = yaml.load(open(os.path.dirname(__file__) + '/config.yaml', 'r'), Loader=yaml.Loader)
+    config   = None
     print('GETTING BALROG FILES FROM:', PATH)
     
-    files = sorted(glob.glob(PATH + '/fitvd_*'))
-    tiles = [f[-17:-5] for f in files] #Tilenames
-
+    files = sorted(glob.glob(PATH + '_config*' + '/fitvd_*'))
+    
     print(f"I HAVE FOUND {len(files)} FILES")
     
     FINAL_CAT = [None] * len(files)
+    TRUTH_CAT = [None] * len(files)
+    BOUT_CAT  = [None] * len(files)
     tilenames = [None] * len(files)
     
     def my_func(i):
         f = files[i]
         tile = os.path.basename(f).split('_')[1].split('.')[0]
-        cat  = match_catalogs(os.path.dirname(f), tile, 'griz', config)
+        seed = int(os.path.basename(f).split('_')[2].split('.')[0][4:])
+        cat  = match_catalogs(os.path.dirname(f), tile, seed, 'griz', config)
         N    = len(cat) if cat is not None else 0 
         return i, cat, [tile] * N
         
     jobs = [joblib.delayed(my_func)(i) for i in range(len(files))]
 
     with joblib.parallel_backend("loky"):
-        outputs = joblib.Parallel(n_jobs = 1, verbose=10)(jobs)
+        outputs = joblib.Parallel(n_jobs = 2, verbose=10)(jobs)
         
         for o in outputs:
             if o is None: continue
-            FINAL_CAT[o[0]] = o[1]
+            FINAL_CAT[o[0]] = o[1][0]
+            TRUTH_CAT[o[0]] = o[1][1]
+            BOUT_CAT[o[0]]  = o[1][2]
             tilenames[o[0]] = o[2]
                     
     FINAL_CAT = np.concatenate([f for f in FINAL_CAT if f is not None], axis = 0)
+    TRUTH_CAT = np.concatenate([f for f in TRUTH_CAT if f is not None], axis = 0)
+    BOUT_CAT  = np.concatenate([f for f in BOUT_CAT  if f is not None], axis = 0)
     tilenames = np.concatenate([t for t in tilenames if t is not None], axis = 0)
     
     BITMASK = hp.read_map('/project/chihway/dhayaa/DECADE/Foreground_Masks/GOLD_Ext0.2_Star5_MCs2.fits')
     bmask   = BITMASK[hp.ang2pix(hp.npix2nside(BITMASK.size), FINAL_CAT['truth_ra'], FINAL_CAT['truth_dec'], lonlat = True)]
 
-    with h5py.File(PATH + '/BalrogOfTheDwarves_Catalog_20250418.hdf5', 'w') as f:
-    
-        for i in tqdm(FINAL_CAT.dtype.names, desc = 'Making HDF5'):
+    with h5py.File(PATH + '/BalrogOfTheDwarves_Catalog_20250512.hdf5', 'w') as b:
+        
+        f = b.create_group('Truth')
+        for i in tqdm(TRUTH_CAT.dtype.names, desc = 'Making TRUTH HDF5'):
+            f.create_dataset(i, data = TRUTH_CAT[i])
+            
+        f = b.create_group('Output')
+        for i in tqdm(BOUT_CAT.dtype.names, desc = 'Making OUTPUT HDF5'):
+            f.create_dataset(i, data = BOUT_CAT[i])
+        
+        
+        f = b.create_group('Matched')
+        for i in tqdm(FINAL_CAT.dtype.names, desc = 'Making MATCHED HDF5'):
 
             if i in ['meas_flagstr']: continue #Ignore some fields
             f.create_dataset(i, data = FINAL_CAT[i])

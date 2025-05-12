@@ -77,7 +77,7 @@ def move_OldSrcExtractor_cat(tile, band, output_desdata, seed):
 
     new_path = os.environ['BALROG_DIR'] + "/%(name)s/OldSrcExtractor_%(tile)s_%(band)s-cat.fits" % args
 
-    shutil.move(cat_path, new_path)
+    shutil.copy(cat_path, new_path)
         
     return True
 
