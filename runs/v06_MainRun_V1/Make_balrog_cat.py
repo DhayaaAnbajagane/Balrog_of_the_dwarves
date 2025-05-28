@@ -128,7 +128,11 @@ def match_catalogs(path, tilename, seed, bands, config):
 
 if __name__ == "__main__":
     
-
+    #v06_MainRun_V1_config3/SrcExtractor_DES2111-0207_seed2761987536_z-cat.fits
+    #v06_MainRun_V1_config3/Input_DES2111-0207_seed2091518858-cat.fits
+    #v06_MainRun_V1_config3/fitvd_DES1108+1751_seed805984730.fits
+    #v06_MainRun_V1_config3/SplicedSim_Input_DES1916-1624_seed1953607505-cat.fits
+    
     name     = os.path.basename(os.path.dirname(__file__))
     BROG_DIR = os.environ['BALROG_DIR']
     PATH     = BROG_DIR + '/' + name
@@ -137,81 +141,109 @@ if __name__ == "__main__":
     
     files = sorted(glob.glob(PATH + '_config*' + '/fitvd_*'))
     
-    print(f"I HAVE FOUND {len(files)} FILES")
     
-    FINAL_CAT = [None] * len(files)
-    TRUTH_CAT = [None] * len(files)
-    BOUT_CAT  = [None] * len(files)
-    tilenames = [None] * len(files)
+    fitvd = fitsio.read(files[0])
+    SE    = fitsio.read(files[0].replace('fitvd_', 'SrcExtractor_').replace('.fits', '_r-cat.fits'))
+    Input = fitsio.read(files[0].replace('fitvd_', 'Input_').replace('.fits', '-cat.fits'))
+    Splic = fitsio.read(files[0].replace('fitvd_', 'SplicedSim_Input_').replace('.fits', '-cat.fits'))
     
-    def my_func(i):
-        f = files[i]
-        tile = os.path.basename(f).split('_')[1].split('.')[0]
-        seed = int(os.path.basename(f).split('_')[2].split('.')[0][4:])
-        cat  = match_catalogs(os.path.dirname(f), tile, seed, 'griz', config)
-        N    = len(cat) if cat is not None else 0 
-        return i, cat, [tile] * N
+    
+    def fitvd_it(key): 
         
-    jobs = [joblib.delayed(my_func)(i) for i in range(len(files))]
-
-    with joblib.parallel_backend("loky"):
-        outputs = joblib.Parallel(n_jobs = 2, verbose=10)(jobs)
+        if key == 'tilename':
+            f = lambda i : [os.path.basename(files[i]).split('_')[1].split('.')[0]] * fitsio.read(files[i], columns = 'id').size
+        elif key == 'seed':
+            f = lambda i : [int(os.path.basename(files[i]).split('_')[2].split('.')[0][4:])] * fitsio.read(files[i], columns = 'id').size
+        elif key == 'cnum':
+            f = lambda i : [int(os.path.dirname(files[i])[-1])] * fitsio.read(files[i], columns = 'id').size
+        else:
+            f = lambda i : fitsio.read(files[i], columns = key)
         
-        for o in outputs:
-            if o is None: continue
-            FINAL_CAT[o[0]] = o[1][0]
-            TRUTH_CAT[o[0]] = o[1][1]
-            BOUT_CAT[o[0]]  = o[1][2]
-            tilenames[o[0]] = o[2]
-                    
-    FINAL_CAT = np.concatenate([f for f in FINAL_CAT if f is not None], axis = 0)
-    TRUTH_CAT = np.concatenate([f for f in TRUTH_CAT if f is not None], axis = 0)
-    BOUT_CAT  = np.concatenate([f for f in BOUT_CAT  if f is not None], axis = 0)
-    tilenames = np.concatenate([t for t in tilenames if t is not None], axis = 0)
+        return np.concatenate(
+                    joblib.Parallel(n_jobs = -1, verbose=10)(
+                                    [joblib.delayed(f)(i) for i in range(len(files))]
+                                )
+                        )
     
-    BITMASK = hp.read_map('/project/chihway/dhayaa/DECADE/Foreground_Masks/GOLD_Ext0.2_Star5_MCs2.fits')
-    bmask   = BITMASK[hp.ang2pix(hp.npix2nside(BITMASK.size), FINAL_CAT['truth_ra'], FINAL_CAT['truth_dec'], lonlat = True)]
-
-    with h5py.File(PATH + '/BalrogOfTheDwarves_Catalog_20250512.hdf5', 'w') as b:
+    
+    def SE_it(key, band): 
+        
+        return np.concatenate(
+                    joblib.Parallel(n_jobs = -1, verbose=10)(
+                                    [joblib.delayed(lambda i : fitsio.read((files[i]
+                                                                            .replace('fitvd_', 'SrcExtractor_')
+                                                                            .replace('.fits', f'_{band}-cat.fits')), columns = key))(i) 
+                                     for i in range(len(files))]
+                                )
+                        )
+    
+    
+    def Truth_it(key): 
+        
+        if key == 'tilename':
+            f = lambda i : ([os.path.basename(files[i]).split('_')[1].split('.')[0]] * 
+                            fitsio.read(files[i].replace('fitvd_', 'Input_').replace('.fits', f'-cat.fits'), columns = 'id').size)
+        elif key == 'seed':
+            f = lambda i : ([int(os.path.basename(files[i]).split('_')[2].split('.')[0][4:])] * 
+                            fitsio.read(files[i].replace('fitvd_', 'Input_').replace('.fits', f'-cat.fits'), columns = 'id').size)
+        elif key == 'cnum':
+            f = lambda i : ([int(os.path.dirname(files[i])[-1])] * 
+                            fitsio.read(files[i].replace('fitvd_', 'Input_').replace('.fits', f'-cat.fits'), columns = 'id').size)
+        else:
+            f = lambda i : fitsio.read(files[i].replace('fitvd_', 'Input_').replace('.fits', f'-cat.fits'), columns = key)
+            
+        return np.concatenate(
+                    joblib.Parallel(n_jobs = -1, verbose=10)(
+                                    [joblib.delayed(f)(i) for i in range(len(files))]
+                                )
+                        )
+    
+    
+    def Splic_it(key): 
+        
+        def my_matched_function(i):
+            
+            Input = fitsio.read(files[i].replace('fitvd_', 'Input_').replace('.fits', '-cat.fits'), columns = 'ind')
+            Splic = fitsio.read(files[i].replace('fitvd_', 'SplicedSim_Input_').replace('.fits', '-cat.fits'), columns = key)
+            Splic = Splic[Input]
+            
+            return Splic
+            
+        return np.concatenate(
+                    joblib.Parallel(n_jobs = -1, verbose=10)(
+                                    [joblib.delayed(my_matched_function)(i) for i in range(len(files))]
+                                )
+                        )
+    
+    
+    with h5py.File(PATH + '/BalrogOfTheDwarves_Catalog_20250527.hdf5', 'w') as b:
         
         f = b.create_group('Truth')
-        for i in tqdm(TRUTH_CAT.dtype.names, desc = 'Making TRUTH HDF5'):
-            f.create_dataset(i, data = TRUTH_CAT[i])
+        for i in tqdm(Input.dtype.names, desc = 'Adding Truth'):
+            if i in ['ID']: continue
+            f.create_dataset(i, data = Truth_it(i))
+            
+        f.create_dataset('tilename', data = Truth_it('tilename').astype('S'), dtype = h5py.special_dtype(vlen=str))
+        f.create_dataset('cnum',     data = Truth_it('cnum'))
+        f.create_dataset('seed',     data = Truth_it('seed'))
+            
+        for i in tqdm(Splic.dtype.names, desc = 'Adding Input'):
+            f.create_dataset(i, data = Splic_it(i))
             
         f = b.create_group('Output')
-        for i in tqdm(BOUT_CAT.dtype.names, desc = 'Making OUTPUT HDF5'):
-            f.create_dataset(i, data = BOUT_CAT[i])
+        for i in tqdm(fitvd.dtype.names, desc = 'Adding fitvd'):
+            if i in ['flagstr']: continue
+            f.create_dataset(i, data = fitvd_it(i))
+            
+        f.create_dataset('tilename', data = fitvd_it('tilename').astype('S'), dtype = h5py.special_dtype(vlen=str))
+        f.create_dataset('cnum',     data = fitvd_it('cnum'))
+        f.create_dataset('seed',     data = fitvd_it('seed'))
+            
+        for band in 'GRIZ':
+            for i in tqdm(SE.dtype.names, desc = f'Adding SourceExtractor BAND {band}'):
+                f.create_dataset(i + f'_{band}', data = SE_it(i, band = band.lower()))
         
         
-        f = b.create_group('Matched')
-        for i in tqdm(FINAL_CAT.dtype.names, desc = 'Making MATCHED HDF5'):
-
-            if i in ['meas_flagstr']: continue #Ignore some fields
-            f.create_dataset(i, data = FINAL_CAT[i])
-        
-        
-        f.create_dataset('FLAGS_FOREGROUND', data = bmask); print("FINISHED ADDING SUPPLEMENTARY DATA: FLAG_FOREGROUND")            
-        f.create_dataset('tilename', data = tilenames.astype('S'), dtype = h5py.special_dtype(vlen=str)); print("FINISHED ADDING SUPPLEMENTARY DATA: TILENAME")
-        
-        
-        #Deredden quantities
-        for name in ['SFD98', 'Planck13']:
-
-            if name == 'SFD98':
-                EXTINCTION = hp.read_map('/project/chihway/dhayaa/DECADE/Extinction_Maps/ebv_sfd98_nside_4096_ring_equatorial.fits')
-                R_SFD98    = EXTINCTION[hp.ang2pix(4096, f['truth_ra'][:], f['truth_dec'][:], lonlat = True)]
-                Ag, Ar, Ai, Az = R_SFD98*3.186, R_SFD98*2.140, R_SFD98*1.569, R_SFD98*1.196
-
-            elif name == 'Planck13':
-                EXTINCTION = hp.read_map('/project/chihway/dhayaa/DECADE/Extinction_Maps/ebv_planck13_nside_4096_ring_equatorial.fits')
-                R_PLK13    = EXTINCTION[hp.ang2pix(4096, f['truth_ra'][:], f['truth_dec'][:], lonlat = True)]
-                Ag, Ar, Ai, Az = R_PLK13*4.085, R_PLK13*2.744, R_PLK13*2.012, R_PLK13*1.533
-
-            f.create_dataset('Ag_' + name.lower(), data = Ag)
-            f.create_dataset('Ar_' + name.lower(), data = Ar)
-            f.create_dataset('Ai_' + name.lower(), data = Ai)
-            f.create_dataset('Az_' + name.lower(), data = Az); print(f"FINISHED ADDING SUPPLEMENTARY DATA: EXTINCTION f{name}")
-
     print(f"FINISHED MAKING CATALOG")
         
     
