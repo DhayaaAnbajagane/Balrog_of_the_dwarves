@@ -230,6 +230,7 @@ if __name__ == "__main__":
         for i in tqdm(Splic.dtype.names, desc = 'Adding Input'):
             f.create_dataset(i, data = Splic_it(i))
             
+            
         f = b.create_group('Output')
         for i in tqdm(fitvd.dtype.names, desc = 'Adding fitvd'):
             if i in ['flagstr']: continue
@@ -242,6 +243,40 @@ if __name__ == "__main__":
         for band in 'GRIZ':
             for i in tqdm(SE.dtype.names, desc = f'Adding SourceExtractor BAND {band}'):
                 f.create_dataset(i + f'_{band}', data = SE_it(i, band = band.lower()))
+                
+        
+        #GOLD FLAGS
+        FLAG_BIT_1  = f['bdf_flags'][:] != 0
+        FLAG_BIT_2  = (f['FLAGS_G'][:] > 3) | (f['FLAGS_R'][:] > 3) | (f['FLAGS_I'][:] > 3) | (f['FLAGS_Z'][:] > 3)
+        FLAG_BIT_4  = 0 #Not available
+        FLAG_BIT_8  = (f['bdf_T'][:]*f['bdf_T_err'][:] > 30) & (f['bdf_T'][:]/f['bdf_T_err'][:] < 3)
+        FLAG_BIT_16 = (f['MAG_AUTO_R'][:] > 26.5) | (f['MAG_AUTO_I'][:] > 26.2) | (f['MAG_AUTO_Z'][:] > 25.6)
+        FLAG_BIT_32 = ((f['MAG_AUTO_R'][:] - f['MAG_AUTO_I'][:] > 5) | (f['MAG_AUTO_R'][:] - f['MAG_AUTO_I'][:] < -5 ) |
+                       (f['MAG_AUTO_I'][:] - f['MAG_AUTO_Z'][:] > 5) | (f['MAG_AUTO_I'][:] - f['MAG_AUTO_Z'][:] < -5 ))
+        FLAG_BIT_64 = 0 #No Nepochs available so set full flag to 0
+        
+        f.create_dataset('FLAGS_GOLD', data = (1*FLAG_BIT_1 + 2*FLAG_BIT_2 + 4*FLAG_BIT_4 + 
+                                               8*FLAG_BIT_8 + 16*FLAG_BIT_16 + 32*FLAG_BIT_32 + 64*FLAG_BIT_64))
+        
+        
+        #Deredden quantities
+        for name in ['SFD98', 'Planck13']:
+
+            if name == 'SFD98':
+                EXTINCTION = hp.read_map('/project/chihway/dhayaa/DECADE/Extinction_Maps/ebv_sfd98_nside_4096_ring_equatorial.fits')
+                R_SFD98    = EXTINCTION[hp.ang2pix(4096, f['ra'][:], f['dec'][:], lonlat = True)]
+                Ag, Ar, Ai, Az = R_SFD98*3.186, R_SFD98*2.140, R_SFD98*1.569, R_SFD98*1.196
+
+            elif name == 'Planck13':
+                EXTINCTION = hp.read_map('/project/chihway/dhayaa/DECADE/Extinction_Maps/ebv_planck13_nside_4096_ring_equatorial.fits')
+                R_PLK13    = EXTINCTION[hp.ang2pix(4096, f['ra'][:], f['dec'][:], lonlat = True)]
+                Ag, Ar, Ai, Az = R_PLK13*4.085, R_PLK13*2.744, R_PLK13*2.012, R_PLK13*1.533
+
+            f.create_dataset('Ag_' + name.lower(), data = Ag)
+            f.create_dataset('Ar_' + name.lower(), data = Ar)
+            f.create_dataset('Ai_' + name.lower(), data = Ai)
+            f.create_dataset('Az_' + name.lower(), data = Az)
+        
         
         
     print(f"FINISHED MAKING CATALOG")
